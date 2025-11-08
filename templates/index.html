@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Violence Detection System</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+  <div class="hero-section">
+    <div class="hero-icon">🛡️</div>
+    <h1>Violence Detection System</h1>
+    <p class="hero-subtitle">AI-powered real-time violence detection using deep learning. Upload videos or use your
+      webcam for instant analysis with automatic Telegram alerts.</p>
+  </div>
+
+  <div class="container">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="upload">📤 Upload Video</button>
+      <button class="tab-btn" data-tab="webcam">📷 Real-Time Webcam</button>
+    </div>
+
+    <div class="tab-content active" id="upload-tab">
+      <div class="section">
+        <h2>📤 Upload Video for Detection</h2>
+        <form id="uploadForm" enctype="multipart/form-data">
+          <div class="upload-area">
+            <div class="upload-icon">⬆️</div>
+            <p class="upload-text">Click to upload video</p>
+            <p class="upload-subtext">Supports MP4, AVI, MOV and other video formats</p>
+            <input type="file" id="videoFile" name="video" accept="video/*" required class="file-input">
+          </div>
+          <button type="submit" class="btn btn-primary">Upload and Analyze Video</button>
+        </form>
+        <div id="uploadStatus"></div>
+
+        <!-- Video Preview for Upload -->
+        <div id="uploadVideoPreview" class="video-preview-container hidden">
+          <h3>📹 Video Analysis</h3>
+          <video id="uploadedVideo" class="video-preview" controls></video>
+          <div class="analysis-status">
+            <span class="status-indicator" id="uploadAnalysisStatus">🔍 Analyzing...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="webcam-tab">
+      <div class="section">
+        <h2>📷 Real-time Webcam Detection</h2>
+        <div class="webcam-controls">
+          <button id="startWebcam" class="btn btn-primary">Start Webcam Detection</button>
+          <button id="stopDetection" class="btn btn-secondary" disabled>Stop Detection</button>
+        </div>
+        <div id="webcamStatus"></div>
+
+        <!-- Webcam Video Feed -->
+        <div id="webcamVideoPreview" class="video-preview-container hidden">
+          <h3>📹 Live Webcam Feed</h3>
+          <img id="webcamFeed" class="video-preview" src="" alt="Webcam Feed">
+          <div class="analysis-status">
+            <span class="status-indicator" id="webcamAnalysisStatus">🔍 Monitoring...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section status-section">
+      <h2>System Status</h2>
+      <div id="systemStatus" class="status-card status-ready">System Ready</div>
+      <div id="detectionResult" class="status-card status-safe hidden">No Violence Detected</div>
+    </div>
+  </div>
+
+  <!-- Dialog Box for Violence Detection Alert -->
+  <div id="alertDialog" class="dialog-overlay hidden">
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <h2>⚠️ VIOLENCE DETECTED!</h2>
+      </div>
+      <div class="dialog-content">
+        <p>Violence has been detected by the system.</p>
+        <p>An alert has been sent to the configured Telegram bot.</p>
+      </div>
+      <div class="dialog-footer">
+        <button id="closeDialog" class="btn btn-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="alarmSound" src="https://www.soundjay.com/misc/sounds/bell-ringing-05.wav" preload="auto"></audio>
+
+  <script>
+    // DOM Elements
+    const uploadForm = document.getElementById('uploadForm');
+    const videoFile = document.getElementById('videoFile');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const startWebcamBtn = document.getElementById('startWebcam');
+    const stopDetectionBtn = document.getElementById('stopDetection');
+    const webcamStatus = document.getElementById('webcamStatus');
+    const systemStatus = document.getElementById('systemStatus');
+    const detectionResult = document.getElementById('detectionResult');
+    const alarmSound = document.getElementById('alarmSound');
+    const alertDialog = document.getElementById('alertDialog');
+    const closeDialog = document.getElementById('closeDialog');
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    // Event Listeners
+    uploadForm.addEventListener('submit', handleVideoUpload);
+    startWebcamBtn.addEventListener('click', startWebcamDetection);
+    stopDetectionBtn.addEventListener('click', stopDetection);
+    closeDialog.addEventListener('click', closeAlertDialog);
+
+    // Tab switching
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab + '-tab').classList.add('active');
+      });
+    });
+
+    // Handle video upload
+    function handleVideoUpload(e) {
+      e.preventDefault();
+
+      const file = videoFile.files[0];
+      if (!file) {
+        uploadStatus.innerHTML = '<div class="status alert">Please select a video file</div>';
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('video', file);
+
+      uploadStatus.innerHTML = '<div class="status">Uploading and processing video...</div>';
+
+      // Show video preview
+      const uploadVideoPreview = document.getElementById('uploadVideoPreview');
+      const uploadedVideo = document.getElementById('uploadedVideo');
+      const uploadAnalysisStatus = document.getElementById('uploadAnalysisStatus');
+
+      uploadVideoPreview.classList.remove('hidden');
+      uploadedVideo.src = URL.createObjectURL(file);
+      uploadAnalysisStatus.textContent = '🔍 Analyzing...';
+      uploadAnalysisStatus.className = 'status-indicator analyzing';
+
+      fetch('/upload', {
+        method: 'POST',
+        body: formData
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            uploadStatus.innerHTML = `<div class="status alert">Error: ${data.error}</div>`;
+            uploadVideoPreview.classList.add('hidden');
+          } else {
+            uploadStatus.innerHTML = `<div class="status safe">${data.message}</div>`;
+            // Start checking for violence detection results
+            checkStatus();
+          }
+        })
+        .catch(error => {
+          uploadStatus.innerHTML = `<div class="status alert">Error uploading video: ${error.message}</div>`;
+          uploadVideoPreview.classList.add('hidden');
+        });
+    }
+
+    // Start webcam detection
+    function startWebcamDetection() {
+      systemStatus.className = 'status';
+      systemStatus.innerHTML = 'Webcam Detection Active';
+      startWebcamBtn.disabled = true;
+      stopDetectionBtn.disabled = false;
+
+      // Show webcam feed
+      const webcamVideoPreview = document.getElementById('webcamVideoPreview');
+      const webcamFeed = document.getElementById('webcamFeed');
+      const webcamAnalysisStatus = document.getElementById('webcamAnalysisStatus');
+
+      webcamVideoPreview.classList.remove('hidden');
+      webcamFeed.src = '/video_feed';
+      webcamAnalysisStatus.textContent = '🔍 Monitoring...';
+      webcamAnalysisStatus.className = 'status-indicator analyzing';
+
+      fetch('/start_webcam', {
+        method: 'POST'
+      })
+        .then(response => response.json())
+        .then(data => {
+          webcamStatus.innerHTML = `<div class="status safe">${data.message}</div>`;
+          // Start checking for violence detection results
+          checkStatus();
+        })
+        .catch(error => {
+          webcamStatus.innerHTML = `<div class="status alert">Error starting webcam: ${error.message}</div>`;
+          webcamVideoPreview.classList.add('hidden');
+        });
+    }
+
+    // Stop detection
+    function stopDetection() {
+      fetch('/stop_detection', {
+        method: 'POST'
+      })
+        .then(response => response.json())
+        .then(data => {
+          webcamStatus.innerHTML = `<div class="status safe">${data.message}</div>`;
+          systemStatus.className = 'status safe';
+          systemStatus.innerHTML = 'System Ready';
+          startWebcamBtn.disabled = false;
+          stopDetectionBtn.disabled = true;
+          detectionResult.className = 'status safe hidden';
+          detectionResult.innerHTML = 'No Violence Detected';
+
+          // Hide webcam feed
+          const webcamVideoPreview = document.getElementById('webcamVideoPreview');
+          webcamVideoPreview.classList.add('hidden');
+        });
+    }
+
+    // Show alert dialog
+    function showAlertDialog() {
+      alertDialog.classList.remove('hidden');
+      // Play alarm sound
+      alarmSound.play();
+    }
+
+    // Close alert dialog and reset system
+    function closeAlertDialog() {
+      alertDialog.classList.add('hidden');
+      // Reset the system state on backend
+      fetch('/reset', {
+        method: 'POST'
+      })
+        .then(() => {
+          // Reset the system state on frontend
+          resetSystem();
+        })
+        .catch(error => {
+          console.error('Error resetting system:', error);
+          resetSystem();
+        });
+    }
+
+    // Reset system for new detection
+    function resetSystem() {
+      // Reset file input
+      uploadForm.reset();
+
+      // Clear status messages
+      uploadStatus.innerHTML = '';
+      webcamStatus.innerHTML = '';
+
+      // Hide video previews
+      document.getElementById('uploadVideoPreview').classList.add('hidden');
+      document.getElementById('webcamVideoPreview').classList.add('hidden');
+
+      // Reset detection result
+      detectionResult.classList.add('hidden');
+      detectionResult.className = 'status-card status-safe hidden';
+      detectionResult.innerHTML = 'No Violence Detected';
+
+      // Reset system status
+      systemStatus.className = 'status-card status-ready';
+      systemStatus.innerHTML = 'System Ready';
+
+      // Enable buttons
+      startWebcamBtn.disabled = false;
+      stopDetectionBtn.disabled = true;
+    }
+
+    // Check system status periodically
+    let statusCheckInterval = null;
+    function checkStatus() {
+      fetch('/status')
+        .then(response => response.json())
+        .then(data => {
+          // Update analysis status indicators
+          const uploadAnalysisStatus = document.getElementById('uploadAnalysisStatus');
+          const webcamAnalysisStatus = document.getElementById('webcamAnalysisStatus');
+
+          if (data.violence_detected) {
+            // Show violence detected alert
+            detectionResult.className = 'status-card status-danger';
+            detectionResult.innerHTML = 'VIOLENCE DETECTED!';
+            detectionResult.classList.remove('hidden');
+
+            // Update status indicators
+            if (uploadAnalysisStatus) {
+              uploadAnalysisStatus.textContent = '⚠️ VIOLENCE DETECTED!';
+              uploadAnalysisStatus.className = 'status-indicator danger';
+            }
+            if (webcamAnalysisStatus) {
+              webcamAnalysisStatus.textContent = '⚠️ VIOLENCE DETECTED!';
+              webcamAnalysisStatus.className = 'status-indicator danger';
+            }
+
+            // Play alarm sound and show dialog
+            alarmSound.play();
+            showAlertDialog();
+
+            // Stop checking status
+            if (statusCheckInterval) {
+              clearTimeout(statusCheckInterval);
+              statusCheckInterval = null;
+            }
+          } else if (data.detection_active) {
+            // Detection is active but no violence detected yet
+            detectionResult.className = 'status-card status-safe';
+            detectionResult.innerHTML = 'Monitoring... No Violence Detected';
+            detectionResult.classList.remove('hidden');
+
+            // Update status indicators
+            if (uploadAnalysisStatus && !uploadAnalysisStatus.classList.contains('danger')) {
+              uploadAnalysisStatus.textContent = '✅ No Violence Detected';
+              uploadAnalysisStatus.className = 'status-indicator safe';
+            }
+            if (webcamAnalysisStatus && !webcamAnalysisStatus.classList.contains('danger')) {
+              webcamAnalysisStatus.textContent = '✅ No Violence Detected';
+              webcamAnalysisStatus.className = 'status-indicator safe';
+            }
+
+            // Continue checking
+            statusCheckInterval = setTimeout(checkStatus, 1000);
+          } else {
+            // Detection stopped
+            if (statusCheckInterval) {
+              clearTimeout(statusCheckInterval);
+              statusCheckInterval = null;
+            }
+          }
+        })
+        .catch(error => {
+          console.error('Error checking status:', error);
+          if (statusCheckInterval) {
+            clearTimeout(statusCheckInterval);
+            statusCheckInterval = null;
+          }
+        });
+    }
+  </script>
+</body>
+
+</html>

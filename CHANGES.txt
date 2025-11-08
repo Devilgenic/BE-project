@@ -1,0 +1,45 @@
+VIOLENCE DETECTION SYSTEM - RECENT UPDATES
+===========================================
+
+BUGS FIXED:
+-----------
+1. System Reset Bug - Fixed the issue where after clicking OK on the violence detection dialog, 
+   the system was not resetting properly and users couldn't check other videos.
+   
+   Solutions implemented:
+   - Added a new /reset endpoint in app.py to properly reset the violence_detected flag
+   - Updated the closeAlertDialog() function to call the reset endpoint
+   - Modified upload and webcam endpoints to reset the violence_detected flag before starting new detection
+   - Added proper state management to clear all status messages and reset the UI
+
+UI IMPROVEMENTS (Based on provided design):
+-------------------------------------------
+1. Modern gradient background (purple gradient)
+2. Hero section with shield icon and descriptive subtitle
+3. Tab-based navigation between Upload Video and Real-Time Webcam
+4. Redesigned upload area with dashed border and drag-drop style
+5. Updated color scheme to match modern design standards
+6. Improved dialog box with gradient header background
+7. Enhanced button styles with hover effects and shadows
+8. Better spacing and typography throughout the application
+
+NEW FEATURES:
+-------------
+1. System automatically resets after acknowledging violence detection
+2. Tab-based interface for better user experience
+3. Visual feedback for all interactions
+4. Improved status indicators with animations
+
+HOW TO USE:
+-----------
+1. Visit http://localhost:5000
+2. Choose either "Upload Video" or "Real-Time Webcam" tab
+3. Upload a video or start webcam detection
+4. When violence is detected:
+   - Alarm sound plays
+   - Dialog box appears with warning
+   - Telegram notification is sent (if configured)
+5. Click OK to close the dialog
+6. System automatically resets and you can check another video
+
+The system is now fully functional with the modern UI and all bugs fixed.
