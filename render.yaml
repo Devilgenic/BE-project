@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: violence-detection-system
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 --bind 0.0.0.0:$PORT --timeout 300 app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.6"
+      - key: RENDER
+        value: "true"

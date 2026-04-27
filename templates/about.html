@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+{% block title %}About - Violence Detection System{% endblock %}
+{% block page_title %}Architecture & Algorithm{% endblock %}
+
+{% block content %}
+<div class="about-grid">
+
+  <div class="card full-width">
+    <div class="card-header"><h3><i class="fas fa-diagram-project"></i> System Architecture Diagram</h3></div>
+    <div class="card-body">
+      <div class="architecture-diagram">
+        <svg viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg" class="arch-svg">
+          <!-- Video Sources -->
+          <rect x="20" y="30" width="140" height="60" rx="10" fill="#4285f4" opacity="0.9"/>
+          <text x="90" y="55" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Webcam</text>
+          <text x="90" y="72" text-anchor="middle" fill="white" font-size="9">OpenCV Capture</text>
+
+          <rect x="20" y="110" width="140" height="60" rx="10" fill="#4285f4" opacity="0.9"/>
+          <text x="90" y="135" text-anchor="middle" fill="white" font-size="11" font-weight="bold">RTSP / IP Camera</text>
+          <text x="90" y="152" text-anchor="middle" fill="white" font-size="9">Network Stream</text>
+
+          <rect x="20" y="190" width="140" height="60" rx="10" fill="#4285f4" opacity="0.9"/>
+          <text x="90" y="215" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Video Upload</text>
+          <text x="90" y="232" text-anchor="middle" fill="white" font-size="9">MP4 / AVI / MOV</text>
+
+          <!-- Arrows from sources -->
+          <line x1="160" y1="60" x2="220" y2="150" stroke="#999" stroke-width="2" marker-end="url(#arrow)"/>
+          <line x1="160" y1="140" x2="220" y2="150" stroke="#999" stroke-width="2" marker-end="url(#arrow)"/>
+          <line x1="160" y1="220" x2="220" y2="150" stroke="#999" stroke-width="2" marker-end="url(#arrow)"/>
+
+          <!-- Frame Capture -->
+          <rect x="220" y="120" width="130" height="60" rx="10" fill="#34a853" opacity="0.9"/>
+          <text x="285" y="145" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Frame Capture</text>
+          <text x="285" y="162" text-anchor="middle" fill="white" font-size="9">cv2.VideoCapture</text>
+
+          <line x1="350" y1="150" x2="410" y2="150" stroke="#999" stroke-width="2" marker-end="url(#arrow)"/>
+
+          <!-- Preprocessing -->
+          <rect x="410" y="120" width="130" height="60" rx="10" fill="#fbbc04" opacity="0.9"/>
+          <text x="475" y="140" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Preprocessing</text>
+          <text x="475" y="155" text-anchor="middle" fill="white" font-size="9">Resize, Normalize</text>
+          <text x="475" y="168" text-anchor="middle" fill="white" font-size="9">Grayscale, Blur</text>
+
+          <!-- Three signal branches -->
+          <line x1="540" y1="135" x2="610" y2="60" stroke="#ea4335" stroke-width="2" marker-end="url(#arrow)"/>
+          <line x1="540" y1="150" x2="610" y2="150" stroke="#ea4335" stroke-width="2" marker-end="url(#arrow)"/>
+          <line x1="540" y1="165" x2="610" y2="240" stroke="#ea4335" stroke-width="2" marker-end="url(#arrow)"/>
+
+          <!-- CNN Signal -->
+          <rect x="610" y="30" width="150" height="60" rx="10" fill="#ea4335" opacity="0.9"/>
+          <text x="685" y="52" text-anchor="middle" fill="white" font-size="11" font-weight="bold">CNN Model</text>
+          <text x="685" y="67" text-anchor="middle" fill="white" font-size="9">128×128 → TF/Keras</text>
+          <text x="685" y="80" text-anchor="middle" fill="white" font-size="8">Weight: 50%</text>
+
+          <!-- Optical Flow Signal -->
+          <rect x="610" y="120" width="150" height="60" rx="10" fill="#9c27b0" opacity="0.9"/>
+          <text x="685" y="142" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Optical Flow</text>
+          <text x="685" y="157" text-anchor="middle" fill="white" font-size="9">Farneback Dense</text>
+          <text x="685" y="170" text-anchor="middle" fill="white" font-size="8">Weight: 30%</text>
+
+          <!-- Motion Energy Signal -->
+          <rect x="610" y="210" width="150" height="60" rx="10" fill="#ff9800" opacity="0.9"/>
+          <text x="685" y="232" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Motion Energy</text>
+          <text x="685" y="247" text-anchor="middle" fill="white" font-size="9">Frame Differencing</text>
+          <text x="685" y="260" text-anchor="middle" fill="white" font-size="8">Weight: 20%</text>
+
+          <!-- Fusion arrows -->
+          <line x1="760" y1="60" x2="820" y2="150" stroke="#999" stroke-width="2" marker-end="url(#arrow)"/>
+          <line x1="760" y1="150" x2="820" y2="150" stroke="#999" stroke-width="2" marker-end="url(#arrow)"/>
+          <line x1="760" y1="240" x2="820" y2="150" stroke="#999" stroke-width="2" marker-end="url(#arrow)"/>
+
+          <!-- Fusion Engine -->
+          <rect x="820" y="115" width="160" height="70" rx="10" fill="#1a1a2e" opacity="0.95"/>
+          <text x="900" y="138" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Temporal Fusion</text>
+          <text x="900" y="153" text-anchor="middle" fill="#ffc107" font-size="9">Sliding Window (30)</text>
+          <text x="900" y="168" text-anchor="middle" fill="#ffc107" font-size="9">EMA Smoothing</text>
+          <text x="900" y="178" text-anchor="middle" fill="#ffc107" font-size="8">Evidence Accumulation</text>
+
+          <!-- Decision Output -->
+          <line x1="900" y1="185" x2="900" y2="230" stroke="#999" stroke-width="2" marker-end="url(#arrow)"/>
+
+          <rect x="830" y="230" width="140" height="50" rx="10" fill="#28a745" opacity="0.9"/>
+          <text x="900" y="252" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Decision Logic</text>
+          <text x="900" y="268" text-anchor="middle" fill="white" font-size="9">Threshold + Cooldown</text>
+
+          <!-- Alert Outputs -->
+          <line x1="900" y1="280" x2="900" y2="310" stroke="#999" stroke-width="2" marker-end="url(#arrow)"/>
+
+          <rect x="770" y="310" width="100" height="45" rx="8" fill="#dc3545" opacity="0.9"/>
+          <text x="820" y="330" text-anchor="middle" fill="white" font-size="10" font-weight="bold">Alarm</text>
+          <text x="820" y="345" text-anchor="middle" fill="white" font-size="8">Browser Audio</text>
+
+          <rect x="880" y="310" width="100" height="45" rx="8" fill="#17a2b8" opacity="0.9"/>
+          <text x="930" y="330" text-anchor="middle" fill="white" font-size="10" font-weight="bold">Telegram</text>
+          <text x="930" y="345" text-anchor="middle" fill="white" font-size="8">Photo + Caption</text>
+
+          <rect x="825" y="365" width="150" height="45" rx="8" fill="#6c757d" opacity="0.9"/>
+          <text x="900" y="385" text-anchor="middle" fill="white" font-size="10" font-weight="bold">SQLite Database</text>
+          <text x="900" y="400" text-anchor="middle" fill="white" font-size="8">Event Logging</text>
+
+          <line x1="850" y1="280" x2="820" y2="310" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+          <line x1="930" y1="280" x2="930" y2="310" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+          <line x1="900" y1="280" x2="900" y2="365" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+          <!-- Flask Web Server Box -->
+          <rect x="20" y="320" width="700" height="180" rx="12" fill="none" stroke="#4285f4" stroke-width="2" stroke-dasharray="8,4"/>
+          <text x="40" y="345" fill="#4285f4" font-size="12" font-weight="bold">Flask Web Server (app.py)</text>
+
+          <rect x="40" y="360" width="120" height="50" rx="8" fill="#e3f2fd"/>
+          <text x="100" y="382" text-anchor="middle" fill="#1565c0" font-size="10" font-weight="bold">Dashboard</text>
+          <text x="100" y="398" text-anchor="middle" fill="#1565c0" font-size="8">Live Feed + Gauge</text>
+
+          <rect x="175" y="360" width="120" height="50" rx="8" fill="#e3f2fd"/>
+          <text x="235" y="382" text-anchor="middle" fill="#1565c0" font-size="10" font-weight="bold">History</text>
+          <text x="235" y="398" text-anchor="middle" fill="#1565c0" font-size="8">Event Log + Stats</text>
+
+          <rect x="310" y="360" width="120" height="50" rx="8" fill="#e3f2fd"/>
+          <text x="370" y="382" text-anchor="middle" fill="#1565c0" font-size="10" font-weight="bold">Settings</text>
+          <text x="370" y="398" text-anchor="middle" fill="#1565c0" font-size="8">Config Panel</text>
+
+          <rect x="445" y="360" width="120" height="50" rx="8" fill="#e3f2fd"/>
+          <text x="505" y="382" text-anchor="middle" fill="#1565c0" font-size="10" font-weight="bold">REST API</text>
+          <text x="505" y="398" text-anchor="middle" fill="#1565c0" font-size="8">JSON + SSE Stream</text>
+
+          <rect x="580" y="360" width="120" height="50" rx="8" fill="#e3f2fd"/>
+          <text x="640" y="382" text-anchor="middle" fill="#1565c0" font-size="10" font-weight="bold">Video Feed</text>
+          <text x="640" y="398" text-anchor="middle" fill="#1565c0" font-size="8">MJPEG Stream</text>
+
+          <!-- Client -->
+          <rect x="40" y="440" width="660" height="45" rx="8" fill="#f3e5f5"/>
+          <text x="370" y="462" text-anchor="middle" fill="#7b1fa2" font-size="12" font-weight="bold">Web Browser (HTML5 + JavaScript + CSS3 + Server-Sent Events)</text>
+          <text x="370" y="478" text-anchor="middle" fill="#7b1fa2" font-size="9">Real-time gauge, signal bars, alert dialog, detection history table</text>
+
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#999"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-brain"></i> ML Model Algorithm</h3></div>
+    <div class="card-body about-content">
+      <h4>Convolutional Neural Network (CNN)</h4>
+      <p>The core violence detection model (<code>modelnew.h5</code>) is a <strong>Convolutional Neural Network</strong> trained using <strong>TensorFlow/Keras</strong>. CNNs are the state-of-the-art for image classification tasks because they automatically learn spatial hierarchies of features through convolutional layers.</p>
+
+      <div class="algo-detail">
+        <h5>Model Architecture</h5>
+        <ul>
+          <li><strong>Input Layer:</strong> 128 × 128 × 3 (RGB image)</li>
+          <li><strong>Convolutional Layers:</strong> Multiple Conv2D layers with ReLU activation extract spatial features (edges, textures, body postures)</li>
+          <li><strong>Pooling Layers:</strong> MaxPooling2D reduces spatial dimensions while retaining important features</li>
+          <li><strong>Dense Layers:</strong> Fully connected layers for classification</li>
+          <li><strong>Output Layer:</strong> Single neuron with sigmoid activation (binary classification: violence / non-violence)</li>
+        </ul>
+      </div>
+
+      <div class="algo-detail">
+        <h5>Training Details</h5>
+        <ul>
+          <li><strong>Dataset:</strong> Violence/Non-Violence video frames</li>
+          <li><strong>Preprocessing:</strong> Resize to 128×128, BGR→RGB conversion, pixel normalization [0,1]</li>
+          <li><strong>Loss Function:</strong> Binary Cross-Entropy</li>
+          <li><strong>Optimizer:</strong> Adam optimizer with learning rate scheduling</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-layer-group"></i> Multi-Signal Temporal Fusion</h3></div>
+    <div class="card-body about-content">
+      <p>A single-frame CNN alone is insufficient for robust violence detection because <strong>violence is a temporal event</strong> — it involves motion patterns over time. Our system enhances the CNN with two complementary motion analysis signals:</p>
+
+      <div class="algo-detail">
+        <h5>1. Farneback Optical Flow (Weight: 30%)</h5>
+        <p>Computes dense optical flow between consecutive frames using the Gunnar Farneback algorithm. The flow field encodes pixel-level motion vectors.</p>
+        <div class="formula">Score = clip(mean(magnitude) × std(magnitude) / 50, 0, 1)</div>
+        <p>Violence produces <strong>high magnitude + high variance</strong> (chaotic, aggressive motion). Normal scenes have low, uniform flow.</p>
+      </div>
+
+      <div class="algo-detail">
+        <h5>2. Motion Energy via Frame Differencing (Weight: 20%)</h5>
+        <p>Computes absolute difference between consecutive grayscale frames, then applies a binary threshold (25) to isolate significant motion regions.</p>
+        <div class="formula">Score = clip(changed_pixels / total_pixels × 3, 0, 1)</div>
+        <p>Sudden large-area pixel changes indicate fast, aggressive movements characteristic of violence.</p>
+      </div>
+
+      <div class="algo-detail">
+        <h5>3. Weighted Fusion</h5>
+        <div class="formula">Fusion = 0.50 × CNN + 0.30 × OpticalFlow + 0.20 × MotionEnergy</div>
+      </div>
+
+      <div class="algo-detail">
+        <h5>4. Exponential Moving Average (EMA) Smoothing</h5>
+        <div class="formula">Smoothed<sub>t</sub> = 0.3 × Fusion<sub>t</sub> + 0.7 × Smoothed<sub>t-1</sub></div>
+        <p>Reduces noise and single-frame spikes that cause false positives.</p>
+      </div>
+
+      <div class="algo-detail">
+        <h5>5. Sliding Window Evidence Accumulation</h5>
+        <p>A deque of the last 30 analysis results (~3-5 seconds) tracks temporal evidence. Violence is confirmed only when <strong>all three conditions</strong> are met:</p>
+        <ul>
+          <li><strong>Suspicious Ratio > 40%:</strong> More than 40% of window frames have fusion score above 0.35</li>
+          <li><strong>Recent Peak > Threshold:</strong> At least one of the last 5 frames exceeds the confidence threshold</li>
+          <li><strong>Smoothed Score > 80% of Threshold:</strong> The EMA-smoothed score is sufficiently high</li>
+        </ul>
+        <p>This prevents both <strong>false positives</strong> (single spikes) and <strong>false negatives</strong> (brief dips between violent frames).</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-code"></i> Technology Stack</h3></div>
+    <div class="card-body about-content">
+      <div class="tech-grid">
+        <div class="tech-item">
+          <div class="tech-icon"><i class="fab fa-python"></i></div>
+          <h5>Python 3.x</h5>
+          <p>Primary programming language</p>
+        </div>
+        <div class="tech-item">
+          <div class="tech-icon"><i class="fas fa-flask"></i></div>
+          <h5>Flask</h5>
+          <p>Web framework with REST API</p>
+        </div>
+        <div class="tech-item">
+          <div class="tech-icon"><i class="fas fa-brain"></i></div>
+          <h5>TensorFlow / Keras</h5>
+          <p>Deep learning model inference</p>
+        </div>
+        <div class="tech-item">
+          <div class="tech-icon"><i class="fas fa-camera"></i></div>
+          <h5>OpenCV</h5>
+          <p>Video capture & image processing</p>
+        </div>
+        <div class="tech-item">
+          <div class="tech-icon"><i class="fas fa-database"></i></div>
+          <h5>SQLite</h5>
+          <p>Event history database</p>
+        </div>
+        <div class="tech-item">
+          <div class="tech-icon"><i class="fab fa-telegram"></i></div>
+          <h5>Telegram Bot API</h5>
+          <p>Real-time alert notifications</p>
+        </div>
+        <div class="tech-item">
+          <div class="tech-icon"><i class="fab fa-html5"></i></div>
+          <h5>HTML5 / CSS3 / JS</h5>
+          <p>Responsive web interface</p>
+        </div>
+        <div class="tech-item">
+          <div class="tech-icon"><i class="fas fa-arrows-spin"></i></div>
+          <h5>Server-Sent Events</h5>
+          <p>Real-time score streaming</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card full-width">
+    <div class="card-header"><h3><i class="fas fa-sitemap"></i> Module Structure</h3></div>
+    <div class="card-body about-content">
+      <div class="module-list">
+        <div class="module-item">
+          <code>app.py</code>
+          <span>Flask application — routes, video processing threads, API endpoints, SSE streaming</span>
+        </div>
+        <div class="module-item">
+          <code>detection_engine.py</code>
+          <span>ViolenceDetector class — multi-signal fusion, sliding window, EMA, decision logic</span>
+        </div>
+        <div class="module-item">
+          <code>violence_model.py</code>
+          <span>CNN model loader — loads modelnew.h5, preprocessing utilities</span>
+        </div>
+        <div class="module-item">
+          <code>config.py</code>
+          <span>Configuration manager — thread-safe JSON config with dot-notation access</span>
+        </div>
+        <div class="module-item">
+          <code>database.py</code>
+          <span>SQLite manager — detection event CRUD, statistics queries</span>
+        </div>
+        <div class="module-item">
+          <code>templates/</code>
+          <span>Jinja2 HTML templates — base layout, dashboard, history, settings, about</span>
+        </div>
+        <div class="module-item">
+          <code>static/style.css</code>
+          <span>Complete responsive CSS — sidebar layout, cards, gauges, tables, dialogs</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

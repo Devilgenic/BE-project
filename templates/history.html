@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}History - Violence Detection System{% endblock %}
+{% block page_title %}Detection History{% endblock %}
+
+{% block content %}
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-icon"><i class="fas fa-database"></i></div>
+    <div class="stat-info"><span class="stat-value" id="totalEvents">0</span><span class="stat-label">Total Events</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon alert-icon"><i class="fas fa-paper-plane"></i></div>
+    <div class="stat-info"><span class="stat-value" id="alertsSent">0</span><span class="stat-label">Alerts Sent</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon info-icon"><i class="fas fa-calendar-day"></i></div>
+    <div class="stat-info"><span class="stat-value" id="eventsToday">0</span><span class="stat-label">Events Today</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon success-icon"><i class="fas fa-chart-line"></i></div>
+    <div class="stat-info"><span class="stat-value" id="avgConfidence">0%</span><span class="stat-label">Avg Confidence</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h3><i class="fas fa-clock-rotate-left"></i> Detection Events</h3>
+    <button class="btn btn-sm btn-danger" id="btnClearHistory"><i class="fas fa-trash"></i> Clear All</button>
+  </div>
+  <div class="card-body">
+    <div class="table-wrapper">
+      <table class="data-table" id="eventsTable">
+        <thead>
+          <tr>
+            <th>Frame</th>
+            <th>Timestamp</th>
+            <th>Confidence</th>
+            <th>CNN</th>
+            <th>Optical Flow</th>
+            <th>Motion Energy</th>
+            <th>Source</th>
+            <th>Alert</th>
+          </tr>
+        </thead>
+        <tbody id="eventsBody">
+          <tr><td colspan="8" class="empty-cell"><div class="empty-state"><i class="fas fa-inbox"></i><p>No detection events</p></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentPage = 0;
+  const pageSize = 15;
+
+  function loadHistory(page) {
+    currentPage = page;
+    const offset = page * pageSize;
+    fetch('/api/history?limit=' + pageSize + '&offset=' + offset).then(r => r.json()).then(d => {
+      const tbody = document.getElementById('eventsBody');
+      if (!d.events || d.events.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-cell"><div class="empty-state"><i class="fas fa-inbox"></i><p>No detection events</p></div></td></tr>';
+        document.getElementById('pagination').innerHTML = '';
+        return;
+      }
+      tbody.innerHTML = d.events.map(ev =>
+        '<tr>' +
+        '<td class="thumb-cell">' + (ev.frame_path ? '<img src="/captures/' + ev.frame_path + '" class="table-thumb">' : '-') + '</td>' +
+        '<td>' + new Date(ev.timestamp).toLocaleString() + '</td>' +
+        '<td><span class="score-badge ' + scoreBadgeClass(ev.confidence) + '">' + (ev.confidence * 100).toFixed(1) + '%</span></td>' +
+        '<td>' + (ev.cnn_score * 100).toFixed(1) + '%</td>' +
+        '<td>' + (ev.optical_flow_score * 100).toFixed(1) + '%</td>' +
+        '<td>' + (ev.motion_energy_score * 100).toFixed(1) + '%</td>' +
+        '<td><span class="source-badge">' + ev.source + '</span></td>' +
+        '<td>' + (ev.alert_sent ? '<i class="fas fa-check-circle text-success"></i>' : '<i class="fas fa-times-circle text-muted"></i>') + '</td>' +
+        '</tr>'
+      ).join('');
+
+      const totalPages = Math.ceil(d.total / pageSize);
+      let paginationHtml = '';
+      if (totalPages > 1) {
+        paginationHtml += '<button class="btn btn-sm" ' + (page === 0 ? 'disabled' : '') + ' onclick="loadHistory(' + (page - 1) + ')"><i class="fas fa-chevron-left"></i></button>';
+        paginationHtml += '<span class="page-info">Page ' + (page + 1) + ' of ' + totalPages + '</span>';
+        paginationHtml += '<button class="btn btn-sm" ' + (page >= totalPages - 1 ? 'disabled' : '') + ' onclick="loadHistory(' + (page + 1) + ')"><i class="fas fa-chevron-right"></i></button>';
+      }
+      document.getElementById('pagination').innerHTML = paginationHtml;
+    });
+  }
+
+  function scoreBadgeClass(score) {
+    if (score > 0.7) return 'high';
+    if (score > 0.4) return 'medium';
+    return 'low';
+  }
+
+  function loadStats() {
+    fetch('/api/stats').then(r => r.json()).then(d => {
+      document.getElementById('totalEvents').textContent = d.total_events || 0;
+      document.getElementById('alertsSent').textContent = d.total_alerts || 0;
+      document.getElementById('eventsToday').textContent = d.events_today || 0;
+      document.getElementById('avgConfidence').textContent = ((d.avg_confidence || 0) * 100).toFixed(1) + '%';
+    });
+  }
+
+  document.getElementById('btnClearHistory').addEventListener('click', () => {
+    if (confirm('Are you sure you want to clear all detection history?')) {
+      fetch('/api/history/clear', { method: 'POST' }).then(() => {
+        loadHistory(0);
+        loadStats();
+      });
+    }
+  });
+
+  loadHistory(0);
+  loadStats();
+</script>
+{% endblock %}

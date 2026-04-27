@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Settings - Violence Detection System{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="settings-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-paper-plane"></i> Telegram Alerts</h3></div>
+    <div class="card-body">
+      <div class="form-group">
+        <label>Bot Token</label>
+        <input type="text" class="form-input" id="telegramToken" placeholder="Enter your Telegram bot token" value="{{ config.telegram.bot_token }}">
+      </div>
+      <div class="form-group">
+        <label>Chat ID</label>
+        <input type="text" class="form-input" id="telegramChatId" placeholder="Enter your Telegram chat ID" value="{{ config.telegram.chat_id }}">
+      </div>
+      <p class="form-help"><i class="fas fa-circle-info"></i> Create a bot via <strong>@BotFather</strong> on Telegram to get these credentials.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-sliders"></i> Detection Settings</h3></div>
+    <div class="card-body">
+      <div class="form-group">
+        <label>Sensitivity</label>
+        <div class="radio-group">
+          <label class="radio-card"><input type="radio" name="sensitivity" value="low" {% if config.detection.sensitivity == 'low' %}checked{% endif %}><span class="radio-label">Low</span><span class="radio-desc">Fewer false positives (threshold: 70%)</span></label>
+          <label class="radio-card"><input type="radio" name="sensitivity" value="medium" {% if config.detection.sensitivity == 'medium' %}checked{% endif %}><span class="radio-label">Medium</span><span class="radio-desc">Balanced detection (threshold: 55%)</span></label>
+          <label class="radio-card"><input type="radio" name="sensitivity" value="high" {% if config.detection.sensitivity == 'high' %}checked{% endif %}><span class="radio-label">High</span><span class="radio-desc">Catch more violence (threshold: 40%)</span></label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Frame Skip <span class="form-value" id="frameSkipVal">{{ config.detection.frame_skip }}</span></label>
+        <input type="range" class="form-range" id="frameSkip" min="1" max="10" value="{{ config.detection.frame_skip }}">
+        <p class="form-help">Process every Nth frame. Lower = more accurate, higher = faster.</p>
+      </div>
+      <div class="form-group">
+        <label>Alert Cooldown <span class="form-value" id="cooldownVal">{{ config.detection.alert_cooldown_seconds }}s</span></label>
+        <input type="range" class="form-range" id="alertCooldown" min="5" max="60" value="{{ config.detection.alert_cooldown_seconds }}">
+        <p class="form-help">Minimum seconds between consecutive alerts.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-camera"></i> Camera Source</h3></div>
+    <div class="card-body">
+      <div class="form-group">
+        <label>Webcam Index</label>
+        <input type="number" class="form-input" id="webcamIndex" min="0" max="10" value="{{ config.camera.webcam_index }}">
+      </div>
+      <div class="form-group">
+        <label>RTSP URL</label>
+        <input type="text" class="form-input" id="rtspUrl" placeholder="rtsp://username:password@ip:port/stream" value="{{ config.camera.rtsp_url }}">
+        <p class="form-help">For IP cameras or network video recorders.</p>
+      </div>
+      <div class="form-group">
+        <label class="radio-card">
+          <input type="checkbox" id="lowLatencyMode" {% if config.camera.low_latency_mode %}checked{% endif %}>
+          <span class="radio-label">Low Latency Mode</span>
+          <span class="radio-desc">Keep only the newest live frame for faster RTSP/mobile webcam response.</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label>Analysis Width</label>
+        <input type="number" class="form-input" id="analysisWidth" min="160" max="1280" step="10" value="{{ config.camera.analysis_width }}">
+        <p class="form-help">Frames are resized to this width before live detection. Lower is faster.</p>
+      </div>
+      <div class="form-group">
+        <label>Display Width</label>
+        <input type="number" class="form-input" id="displayWidth" min="160" max="1920" step="10" value="{{ config.camera.display_width }}">
+        <p class="form-help">Caps the preview size sent to the browser during live detection.</p>
+      </div>
+      <div class="form-group">
+        <label>Live Stream FPS</label>
+        <input type="number" class="form-input" id="streamFps" min="1" max="30" step="1" value="{{ config.camera.stream_fps }}">
+        <p class="form-help">Limits MJPEG preview frame rate so detection gets more CPU time.</p>
+      </div>
+      <div class="form-group">
+        <label>Capture Buffer Size</label>
+        <input type="number" class="form-input" id="captureBufferSize" min="1" max="10" step="1" value="{{ config.camera.capture_buffer_size }}">
+        <p class="form-help">Use 1 for phone RTSP demos to avoid old frames piling up.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-weight-scale"></i> Signal Weights</h3></div>
+    <div class="card-body">
+      <div class="form-group">
+        <label>CNN Weight <span class="form-value" id="cnnWeightVal">{{ config.weights.cnn_weight }}</span></label>
+        <input type="range" class="form-range" id="cnnWeight" min="0" max="1" step="0.05" value="{{ config.weights.cnn_weight }}">
+      </div>
+      <div class="form-group">
+        <label>Optical Flow Weight <span class="form-value" id="flowWeightVal">{{ config.weights.optical_flow_weight }}</span></label>
+        <input type="range" class="form-range" id="flowWeight" min="0" max="1" step="0.05" value="{{ config.weights.optical_flow_weight }}">
+      </div>
+      <div class="form-group">
+        <label>Motion Energy Weight <span class="form-value" id="motionWeightVal">{{ config.weights.motion_energy_weight }}</span></label>
+        <input type="range" class="form-range" id="motionWeight" min="0" max="1" step="0.05" value="{{ config.weights.motion_energy_weight }}">
+      </div>
+      <p class="form-help"><i class="fas fa-circle-info"></i> Weights are automatically normalized. Higher CNN weight relies more on the deep learning model.</p>
+    </div>
+  </div>
+</div>
+
+<div class="settings-actions">
+  <button class="btn btn-primary" id="btnSave"><i class="fas fa-save"></i> Save Settings</button>
+  <div id="saveStatus"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('frameSkip').addEventListener('input', function() {
+    document.getElementById('frameSkipVal').textContent = this.value;
+  });
+  document.getElementById('alertCooldown').addEventListener('input', function() {
+    document.getElementById('cooldownVal').textContent = this.value + 's';
+  });
+  document.getElementById('cnnWeight').addEventListener('input', function() {
+    document.getElementById('cnnWeightVal').textContent = this.value;
+  });
+  document.getElementById('flowWeight').addEventListener('input', function() {
+    document.getElementById('flowWeightVal').textContent = this.value;
+  });
+  document.getElementById('motionWeight').addEventListener('input', function() {
+    document.getElementById('motionWeightVal').textContent = this.value;
+  });
+
+  document.getElementById('btnSave').addEventListener('click', function() {
+    const data = {
+      telegram: {
+        bot_token: document.getElementById('telegramToken').value,
+        chat_id: document.getElementById('telegramChatId').value
+      },
+      detection: {
+        sensitivity: document.querySelector('input[name="sensitivity"]:checked').value,
+        frame_skip: parseInt(document.getElementById('frameSkip').value),
+        alert_cooldown_seconds: parseInt(document.getElementById('alertCooldown').value)
+      },
+      camera: {
+        webcam_index: parseInt(document.getElementById('webcamIndex').value),
+        rtsp_url: document.getElementById('rtspUrl').value,
+        low_latency_mode: document.getElementById('lowLatencyMode').checked,
+        analysis_width: parseInt(document.getElementById('analysisWidth').value),
+        display_width: parseInt(document.getElementById('displayWidth').value),
+        stream_fps: parseInt(document.getElementById('streamFps').value),
+        capture_buffer_size: parseInt(document.getElementById('captureBufferSize').value)
+      },
+      weights: {
+        cnn_weight: parseFloat(document.getElementById('cnnWeight').value),
+        optical_flow_weight: parseFloat(document.getElementById('flowWeight').value),
+        motion_energy_weight: parseFloat(document.getElementById('motionWeight').value)
+      }
+    };
+    fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('saveStatus').innerHTML = '<div class="status-msg success"><i class="fas fa-check"></i> ' + d.message + '</div>';
+        setTimeout(() => document.getElementById('saveStatus').innerHTML = '', 3000);
+      })
+      .catch(() => {
+        document.getElementById('saveStatus').innerHTML = '<div class="status-msg error">Failed to save settings</div>';
+      });
+  });
+</script>
+{% endblock %}

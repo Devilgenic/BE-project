@@ -1,0 +1,7 @@
+config.json
+detection_history.db
+captures/
+uploads/
+__pycache__/
+*.pyc
+*.jpg

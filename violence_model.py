@@ -1,16 +1,37 @@
 import cv2
+import os
 import numpy as np
 import tensorflow as tf
+import logging
+
+from tensorflow.keras.layers import DepthwiseConv2D as _DepthwiseConv2D
+
+logger = logging.getLogger(__name__)
+
+
+class CompatDepthwiseConv2D(_DepthwiseConv2D):
+    """
+    Compatibility wrapper for legacy Keras 2.x models that include a `groups`
+    argument in DepthwiseConv2D config. Keras 3 rejects `groups` here.
+    """
+    def __init__(self, *args, **kwargs):
+        kwargs.pop("groups", None)
+        super().__init__(*args, **kwargs)
 
 def create_violence_detection_model():
     """
     Load the trained violence detection model from modelnew.h5 file.
     """
     try:
-        model = tf.keras.models.load_model('modelnew.h5')
+        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modelnew.h5")
+        model = tf.keras.models.load_model(
+            model_path,
+            custom_objects={"DepthwiseConv2D": CompatDepthwiseConv2D},
+            compile=False,
+        )
         return model
     except Exception as e:
-        print(f"Error loading model: {e}")
+        logger.exception("Error loading model: %s", e)
         return None
 
 def preprocess_frame(frame):

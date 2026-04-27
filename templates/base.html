@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Violence Detection System{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo"><i class="fas fa-shield-halved"></i></div>
+      <h2>VDS</h2>
+      <span class="sidebar-subtitle">Violence Detection</span>
+    </div>
+    <ul class="sidebar-nav">
+      <li><a href="/" class="{% if page == 'dashboard' %}active{% endif %}"><i class="fas fa-gauge-high"></i><span>Dashboard</span></a></li>
+      <li><a href="/history" class="{% if page == 'history' %}active{% endif %}"><i class="fas fa-clock-rotate-left"></i><span>History</span></a></li>
+      <li><a href="/settings" class="{% if page == 'settings' %}active{% endif %}"><i class="fas fa-gear"></i><span>Settings</span></a></li>
+      <li><a href="/about" class="{% if page == 'about' %}active{% endif %}"><i class="fas fa-circle-info"></i><span>About</span></a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="system-badge" id="sidebarBadge">
+        <span class="badge-dot"></span>
+        <span>System Ready</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <header class="top-bar">
+      <button class="menu-toggle" id="menuToggle"><i class="fas fa-bars"></i></button>
+      <h1 class="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
+      <div class="top-bar-actions">
+        <div class="status-pill" id="statusPill">
+          <span class="status-dot safe"></span>
+          <span id="statusText">Idle</span>
+        </div>
+      </div>
+    </header>
+    <div class="page-content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <div id="alertDialog" class="dialog-overlay hidden">
+    <div class="dialog-box">
+      <div class="dialog-header"><h2><i class="fas fa-triangle-exclamation"></i> VIOLENCE DETECTED!</h2></div>
+      <div class="dialog-content">
+        <p>Violence has been detected in the video feed.</p>
+        <p>An alert has been sent via configured channels.</p>
+        <div class="dialog-scores" id="dialogScores"></div>
+      </div>
+      <div class="dialog-footer"><button id="closeDialog" class="btn btn-ok">Acknowledge</button></div>
+    </div>
+  </div>
+
+  <audio id="alarmSound" src="https://www.soundjay.com/misc/sounds/bell-ringing-05.wav" preload="auto"></audio>
+
+  <script>
+    const menuToggle = document.getElementById('menuToggle');
+    const sidebar = document.querySelector('.sidebar');
+    menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+
+    const alertDialog = document.getElementById('alertDialog');
+    const closeDialogBtn = document.getElementById('closeDialog');
+    const alarmSound = document.getElementById('alarmSound');
+
+    function showAlertDialog(data) {
+      const scoresEl = document.getElementById('dialogScores');
+      if (scoresEl && data) {
+        scoresEl.innerHTML = `
+          <div class="score-row"><span>Confidence</span><strong>${(data.confidence * 100).toFixed(1)}%</strong></div>
+          <div class="score-row"><span>CNN Score</span><strong>${(data.cnn_score * 100).toFixed(1)}%</strong></div>
+          <div class="score-row"><span>Optical Flow</span><strong>${(data.optical_flow_score * 100).toFixed(1)}%</strong></div>
+          <div class="score-row"><span>Motion Energy</span><strong>${(data.motion_energy_score * 100).toFixed(1)}%</strong></div>`;
+      }
+      alertDialog.classList.remove('hidden');
+      alarmSound.play().catch(() => {});
+    }
+
+    function closeAlertDialog() {
+      alertDialog.classList.add('hidden');
+      alarmSound.pause();
+      alarmSound.currentTime = 0;
+      fetch('/reset', { method: 'POST' });
+    }
+    closeDialogBtn.addEventListener('click', closeAlertDialog);
+
+    function updateGlobalStatus(data) {
+      const pill = document.getElementById('statusPill');
+      const text = document.getElementById('statusText');
+      const dot = pill.querySelector('.status-dot');
+      const badge = document.getElementById('sidebarBadge');
+
+      if (data.violence_detected) {
+        dot.className = 'status-dot danger';
+        text.textContent = 'VIOLENCE DETECTED';
+        pill.classList.add('danger');
+        badge.innerHTML = '<span class="badge-dot danger"></span><span>Alert Active</span>';
+      } else if (data.detection_active) {
+        dot.className = 'status-dot active';
+        text.textContent = 'Monitoring (' + (data.detection_source || 'active') + ')';
+        pill.classList.remove('danger');
+        badge.innerHTML = '<span class="badge-dot active"></span><span>Monitoring</span>';
+      } else {
+        dot.className = 'status-dot safe';
+        text.textContent = 'Idle';
+        pill.classList.remove('danger');
+        badge.innerHTML = '<span class="badge-dot"></span><span>System Ready</span>';
+      }
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
