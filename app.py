@@ -55,7 +55,7 @@ def build_detector_config():
         "optical_flow_weight": config.get("weights.optical_flow_weight", 0.30),
         "motion_energy_weight": config.get("weights.motion_energy_weight", 0.20),
         "confidence_threshold": config.get_threshold(),
-        "frame_skip": config.get("detection.frame_skip", 3),
+        "frame_skip": 10 if IS_RENDER else config.get("detection.frame_skip", 3),
         "alert_cooldown_seconds": config.get("detection.alert_cooldown_seconds", 10),
         "window_size": 30,
     }
@@ -67,7 +67,7 @@ def build_live_detector_config():
         "optical_flow_weight": 0.15,
         "motion_energy_weight": 0.10,
         "confidence_threshold": config.get_threshold(),
-        "frame_skip": 2,
+        "frame_skip": 5 if IS_RENDER else 2,
         "alert_cooldown_seconds": config.get("detection.alert_cooldown_seconds", 10),
         "window_size": 30,
         "suspicious_threshold": 0.50,
