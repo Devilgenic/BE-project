@@ -18,6 +18,7 @@
     </div>
     <ul class="sidebar-nav">
       <li><a href="/" class="{% if page == 'dashboard' %}active{% endif %}"><i class="fas fa-gauge-high"></i><span>Dashboard</span></a></li>
+      <li><a href="/cameras" class="{% if page == 'cameras' %}active{% endif %}"><i class="fas fa-video"></i><span>Cameras</span></a></li>
       <li><a href="/history" class="{% if page == 'history' %}active{% endif %}"><i class="fas fa-clock-rotate-left"></i><span>History</span></a></li>
       <li><a href="/settings" class="{% if page == 'settings' %}active{% endif %}"><i class="fas fa-gear"></i><span>Settings</span></a></li>
       <li><a href="/about" class="{% if page == 'about' %}active{% endif %}"><i class="fas fa-circle-info"></i><span>About</span></a></li>
@@ -53,6 +54,10 @@
         <p>Violence has been detected in the video feed.</p>
         <p>An alert has been sent via configured channels.</p>
         <div class="dialog-scores" id="dialogScores"></div>
+        <div id="dialogFaces" class="dialog-faces" style="display:none;">
+          <h4 style="margin:12px 0 8px;color:#dc3545;"><i class="fas fa-user-circle"></i> Suspects Identified</h4>
+          <div id="faceGrid" class="face-grid"></div>
+        </div>
       </div>
       <div class="dialog-footer"><button id="closeDialog" class="btn btn-ok">Acknowledge</button></div>
     </div>
@@ -77,6 +82,16 @@
           <div class="score-row"><span>CNN Score</span><strong>${(data.cnn_score * 100).toFixed(1)}%</strong></div>
           <div class="score-row"><span>Optical Flow</span><strong>${(data.optical_flow_score * 100).toFixed(1)}%</strong></div>
           <div class="score-row"><span>Motion Energy</span><strong>${(data.motion_energy_score * 100).toFixed(1)}%</strong></div>`;
+      }
+      const facesDiv = document.getElementById('dialogFaces');
+      const faceGrid = document.getElementById('faceGrid');
+      if (data && data.face_crops && data.face_crops.length > 0) {
+        faceGrid.innerHTML = data.face_crops.map((f, i) =>
+          `<div class="face-card"><img src="/captures/${f}" alt="Suspect ${i+1}"><span>Suspect ${i+1}</span></div>`
+        ).join('');
+        facesDiv.style.display = 'block';
+      } else {
+        facesDiv.style.display = 'none';
       }
       alertDialog.classList.remove('hidden');
       alarmSound.play().catch(() => {});

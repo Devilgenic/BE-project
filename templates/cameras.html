@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Multi-Camera Monitor - Violence Detection System{% endblock %}
+{% block page_title %}Multi-Camera Monitor{% endblock %}
+
+{% block content %}
+<div class="camera-toolbar">
+  <button class="btn btn-primary" id="btnAddCamera"><i class="fas fa-plus"></i> Add Camera</button>
+  <button class="btn btn-secondary" id="btnStartAll"><i class="fas fa-play"></i> Start All</button>
+  <button class="btn btn-danger" id="btnStopAll"><i class="fas fa-stop"></i> Stop All</button>
+  <span class="camera-count" id="cameraCount">0 cameras</span>
+</div>
+
+<div id="cameraGrid" class="camera-grid">
+  <div class="empty-state" id="noCameras">
+    <i class="fas fa-video-slash"></i>
+    <p>No cameras configured</p>
+    <span>Click "Add Camera" to connect an IP camera via RTSP</span>
+  </div>
+</div>
+
+<!-- Add Camera Modal -->
+<div id="addCameraModal" class="dialog-overlay hidden">
+  <div class="dialog-box" style="max-width:480px;">
+    <div class="dialog-header" style="background:var(--primary);"><h2><i class="fas fa-camera"></i> Add Camera</h2></div>
+    <div class="dialog-content" style="padding:24px;">
+      <div class="form-group">
+        <label>Camera Name / Location</label>
+        <input type="text" id="camName" class="form-control" placeholder="e.g. Main Gate, Parking Lot, Lab 3">
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>RTSP URL</label>
+        <input type="text" id="camUrl" class="form-control" placeholder="rtsp://admin:password@192.168.1.100:554/stream1">
+        <small class="help-text">Common formats:<br>
+          Hikvision: rtsp://admin:pass@IP:554/Streaming/Channels/101<br>
+          Dahua: rtsp://admin:pass@IP:554/cam/realmonitor?channel=1&subtype=0<br>
+          CP Plus: rtsp://admin:pass@IP:554/cam/realmonitor?channel=1&subtype=1
+        </small>
+      </div>
+    </div>
+    <div class="dialog-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-secondary" id="btnCancelAdd">Cancel</button>
+      <button class="btn btn-primary" id="btnConfirmAdd"><i class="fas fa-plus"></i> Add</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const cameraGrid = document.getElementById('cameraGrid');
+const noCameras = document.getElementById('noCameras');
+const addModal = document.getElementById('addCameraModal');
+let cameras = {};
+
+document.getElementById('btnAddCamera').addEventListener('click', () => {
+  document.getElementById('camName').value = '';
+  document.getElementById('camUrl').value = '';
+  addModal.classList.remove('hidden');
+});
+document.getElementById('btnCancelAdd').addEventListener('click', () => addModal.classList.add('hidden'));
+
+document.getElementById('btnConfirmAdd').addEventListener('click', () => {
+  const name = document.getElementById('camName').value.trim();
+  const url = document.getElementById('camUrl').value.trim();
+  if (!name || !url) { alert('Please fill both fields'); return; }
+
+  fetch('/api/cameras', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, rtsp_url: url })
+  }).then(r => r.json()).then(data => {
+    if (data.error) { alert(data.error); return; }
+    addModal.classList.add('hidden');
+    loadCameras();
+  });
+});
+
+document.getElementById('btnStartAll').addEventListener('click', () => {
+  fetch('/api/cameras/start_all', { method: 'POST' }).then(() => loadCameras());
+});
+document.getElementById('btnStopAll').addEventListener('click', () => {
+  fetch('/api/cameras/stop_all', { method: 'POST' }).then(() => loadCameras());
+});
+
+function loadCameras() {
+  fetch('/api/cameras').then(r => r.json()).then(data => {
+    cameras = {};
+    data.cameras.forEach(c => cameras[c.id] = c);
+    document.getElementById('cameraCount').textContent = data.cameras.length + ' camera' + (data.cameras.length !== 1 ? 's' : '');
+    renderGrid(data.cameras);
+  });
+}
+
+function renderGrid(cams) {
+  if (cams.length === 0) {
+    noCameras.style.display = '';
+    cameraGrid.innerHTML = '';
+    cameraGrid.appendChild(noCameras);
+    return;
+  }
+  noCameras.style.display = 'none';
+
+  cameraGrid.innerHTML = cams.map(c => `
+    <div class="camera-tile" id="tile-${c.id}">
+      <div class="tile-header">
+        <span class="tile-name"><i class="fas fa-map-marker-alt"></i> ${c.name}</span>
+        <span class="tile-status ${c.active ? (c.violence_detected ? 'danger' : 'running') : 'stopped'}">
+          ${c.active ? (c.violence_detected ? 'VIOLENCE' : 'Monitoring') : 'Stopped'}
+        </span>
+      </div>
+      <div class="tile-feed">
+        ${c.active
+          ? `<img src="/api/cameras/${c.id}/feed" alt="${c.name}" class="tile-img">`
+          : `<div class="tile-placeholder"><i class="fas fa-video-slash"></i><p>Not active</p></div>`}
+      </div>
+      <div class="tile-scores" style="${c.active ? '' : 'opacity:0.3'}">
+        <div class="tile-score"><span>Fusion</span><strong>${(c.confidence * 100).toFixed(0)}%</strong></div>
+        <div class="tile-score"><span>CNN</span><strong>${(c.cnn_score * 100).toFixed(0)}%</strong></div>
+        <div class="tile-score"><span>OF</span><strong>${(c.optical_flow_score * 100).toFixed(0)}%</strong></div>
+        <div class="tile-score"><span>ME</span><strong>${(c.motion_energy_score * 100).toFixed(0)}%</strong></div>
+      </div>
+      <div class="tile-actions">
+        ${c.active
+          ? `<button class="btn btn-sm btn-danger" onclick="camAction('${c.id}','stop')"><i class="fas fa-stop"></i> Stop</button>`
+          : `<button class="btn btn-sm btn-primary" onclick="camAction('${c.id}','start')"><i class="fas fa-play"></i> Start</button>`}
+        <button class="btn btn-sm btn-secondary" onclick="camAction('${c.id}','remove')"><i class="fas fa-trash"></i></button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function camAction(id, action) {
+  if (action === 'remove' && !confirm('Remove this camera?')) return;
+  const method = action === 'remove' ? 'DELETE' : 'POST';
+  const url = action === 'remove' ? `/api/cameras/${id}` : `/api/cameras/${id}/${action}`;
+  fetch(url, { method }).then(() => loadCameras());
+}
+
+loadCameras();
+setInterval(loadCameras, 2000);
+</script>
+{% endblock %}

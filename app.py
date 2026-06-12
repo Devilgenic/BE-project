@@ -63,18 +63,18 @@ def build_detector_config():
 
 def build_live_detector_config():
     return {
-        "cnn_weight": 0.75,
-        "optical_flow_weight": 0.15,
-        "motion_energy_weight": 0.10,
+        "cnn_weight": 0.55,
+        "optical_flow_weight": 0.25,
+        "motion_energy_weight": 0.20,
         "confidence_threshold": config.get_threshold(),
         "frame_skip": 5 if IS_RENDER else 2,
         "alert_cooldown_seconds": config.get("detection.alert_cooldown_seconds", 10),
         "window_size": 30,
-        "suspicious_threshold": 0.50,
-        "ema_alpha": 0.5,
-        "optical_flow_divisor": 150.0,
-        "motion_energy_multiplier": 1.5,
-        "min_cnn_for_violence": 0.70,
+        "suspicious_threshold": 0.40,
+        "ema_alpha": 0.4,
+        "optical_flow_divisor": 80.0,
+        "motion_energy_multiplier": 2.5,
+        "min_cnn_for_violence": 0.40,
     }
 
 
@@ -86,11 +86,11 @@ def build_rtsp_alert_gate():
 
 def build_webcam_alert_gate():
     return RTSPAlertGate(
-        min_sharpness=50.0,
-        min_cnn_score=0.70,
-        min_optical_flow_score=0.20,
-        min_motion_energy_score=0.10,
-        min_confidence=0.40,
+        min_sharpness=30.0,
+        min_cnn_score=0.35,
+        min_optical_flow_score=0.10,
+        min_motion_energy_score=0.05,
+        min_confidence=0.35,
         required_consecutive_hits=2,
         alert_cooldown_seconds=config.get("detection.alert_cooldown_seconds", 10),
     )
@@ -111,6 +111,18 @@ detection_source = ""
 latest_result = {}
 last_error = ""
 start_time = time.time()
+
+upload_state = {
+    "active": False,
+    "completed": False,
+    "processed_frames": 0,
+    "total_frames": 0,
+    "current_seconds": 0.0,
+    "duration_seconds": 0.0,
+    "fps": 0.0,
+    "violence_detected": False,
+    "error": "",
+}
 
 live_state = {
     "raw_frame": None,
@@ -208,6 +220,7 @@ def _reset_live_session_state():
         live_state["input_timestamps"].clear()
         live_state["processing_timestamps"].clear()
         live_state["display_timestamps"].clear()
+        _reset_upload_state_unlocked()
     rtsp_stability_filter.reset()
     rtsp_alert_gate.reset()
     webcam_alert_gate.reset()
@@ -244,6 +257,41 @@ def _set_latest_result(result):
         latest_result = dict(result)
 
 
+def _reset_upload_state_unlocked():
+    upload_state.update({
+        "active": False,
+        "completed": False,
+        "processed_frames": 0,
+        "total_frames": 0,
+        "current_seconds": 0.0,
+        "duration_seconds": 0.0,
+        "fps": 0.0,
+        "violence_detected": False,
+        "error": "",
+    })
+
+
+def _get_upload_progress_unlocked():
+    total_frames = int(upload_state.get("total_frames") or 0)
+    processed_frames = int(upload_state.get("processed_frames") or 0)
+    duration = float(upload_state.get("duration_seconds") or 0)
+    current = float(upload_state.get("current_seconds") or 0)
+    if total_frames > 0:
+        percent = min(100.0, (processed_frames / total_frames) * 100.0)
+    elif duration > 0:
+        percent = min(100.0, (current / duration) * 100.0)
+    else:
+        percent = 100.0 if upload_state.get("completed") else 0.0
+    return {
+        **upload_state,
+        "processed_frames": processed_frames,
+        "total_frames": total_frames,
+        "current_seconds": round(current, 2),
+        "duration_seconds": round(duration, 2),
+        "percent": round(percent, 1),
+    }
+
+
 def _is_detection_running(source_type=None):
     with state_lock:
         if not detection_active:
@@ -256,7 +304,7 @@ def _is_detection_running(source_type=None):
 def _get_live_camera_settings():
     return {
         "low_latency_mode": bool(config.get("camera.low_latency_mode", True)),
-        "analysis_width": max(160, int(config.get("camera.analysis_width", 320) or 320)),
+        "analysis_width": max(160, int(config.get("camera.analysis_width", 640) or 640)),
         "display_width": max(160, int(config.get("camera.display_width", 640) or 640)),
         "stream_fps": max(1.0, float(config.get("camera.stream_fps", 10) or 10)),
         "capture_buffer_size": max(1, int(config.get("camera.capture_buffer_size", 1) or 1)),
@@ -336,7 +384,48 @@ def _get_live_stats():
         }
 
 
-def send_telegram_alert(image_path):
+# --------------- Face extraction ---------------
+_face_cascade = None
+
+def _get_face_cascade():
+    global _face_cascade
+    if _face_cascade is None:
+        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        _face_cascade = cv2.CascadeClassifier(cascade_path)
+    return _face_cascade
+
+def extract_faces(frame, padding_ratio=0.35, min_size=(40, 40)):
+    """Detect faces in *frame* and return list of cropped face images."""
+    cascade = _get_face_cascade()
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    detections = cascade.detectMultiScale(
+        gray, scaleFactor=1.1, minNeighbors=5, minSize=min_size
+    )
+    h, w = frame.shape[:2]
+    faces = []
+    for (x, y, fw, fh) in detections:
+        pad_x = int(fw * padding_ratio)
+        pad_y = int(fh * padding_ratio)
+        x1 = max(x - pad_x, 0)
+        y1 = max(y - pad_y, 0)
+        x2 = min(x + fw + pad_x, w)
+        y2 = min(y + fh + pad_y, h)
+        faces.append(frame[y1:y2, x1:x2].copy())
+    return faces
+
+def save_face_crops(faces, timestamp):
+    """Save each face crop to captures/ and return list of filenames."""
+    filenames = []
+    for i, face in enumerate(faces):
+        fname = f"face_{timestamp}_{i}.jpg"
+        path = os.path.join(CAPTURES_DIR, fname)
+        cv2.imwrite(path, face)
+        filenames.append(fname)
+    return filenames
+# ------------------------------------------------
+
+
+def send_telegram_alert(image_path, face_paths=None, source=""):
     bot_token = config.get("telegram.bot_token", "")
     chat_id = config.get("telegram.chat_id", "")
     if not bot_token or not chat_id:
@@ -344,15 +433,33 @@ def send_telegram_alert(image_path):
         return False
     try:
         url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+        location = source.replace("camera:", "") if source.startswith("camera:") else source
+        caption = f"\u26a0\ufe0f VIOLENCE DETECTED!\nSource: {location}\n- Violence Detection System Alert"
         with open(image_path, "rb") as photo:
             files = {"photo": photo}
             data = {
                 "chat_id": chat_id,
-                "caption": "VIOLENCE DETECTED! - Violence Detection System Alert"
+                "caption": caption
             }
             resp = requests.post(url, files=files, data=data, timeout=10)
             logger.info("Telegram response: %s", resp.status_code)
-            return resp.status_code == 200
+
+        # Send each detected face as a separate photo
+        if face_paths:
+            for fp in face_paths:
+                full = os.path.join(CAPTURES_DIR, fp) if not os.path.isabs(fp) else fp
+                try:
+                    with open(full, "rb") as face_photo:
+                        requests.post(
+                            url,
+                            files={"photo": face_photo},
+                            data={"chat_id": chat_id, "caption": "\U0001f464 Suspect face detected in violence incident"},
+                            timeout=10,
+                        )
+                except Exception as fe:
+                    logger.error("Error sending face photo: %s", fe)
+
+        return resp.status_code == 200
     except Exception as e:
         logger.error("Error sending Telegram alert: %s", e)
         return False
@@ -370,7 +477,14 @@ def handle_detection_result(result, frame, source):
         frame_path = os.path.join(CAPTURES_DIR, frame_filename)
         cv2.imwrite(frame_path, frame)
 
-        alert_sent = send_telegram_alert(frame_path)
+        # Extract and save face crops
+        faces = extract_faces(frame)
+        face_filenames = save_face_crops(faces, timestamp) if faces else []
+        if face_filenames:
+            logger.info("Extracted %d face(s) from violence frame", len(face_filenames))
+        result["face_crops"] = face_filenames
+
+        alert_sent = send_telegram_alert(frame_path, face_paths=face_filenames, source=source)
 
         db.add_event(
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -382,7 +496,7 @@ def handle_detection_result(result, frame, source):
             source=source,
             alert_sent=1 if alert_sent else 0,
         )
-        logger.warning("VIOLENCE DETECTED! Confidence: %.4f | Source: %s", result["confidence"], source)
+        logger.warning("VIOLENCE DETECTED! Confidence: %.4f | Source: %s | Faces: %d", result["confidence"], source, len(face_filenames))
 
 
 def process_video(video_path):
@@ -392,6 +506,8 @@ def process_video(video_path):
         detection_source = "upload"
         latest_result = {}
         last_error = ""
+        _reset_upload_state_unlocked()
+        upload_state["active"] = True
     detector.reset()
     _clear_current_frame()
 
@@ -402,26 +518,54 @@ def process_video(video_path):
         with state_lock:
             detection_active = False
             detection_source = ""
+            upload_state["active"] = False
+            upload_state["error"] = "Failed to open uploaded video."
         return
 
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 0)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    duration_seconds = (total_frames / fps) if fps > 0 and total_frames > 0 else 0.0
+    with state_lock:
+        upload_state.update({
+            "total_frames": total_frames,
+            "duration_seconds": duration_seconds,
+            "fps": fps,
+        })
+
+    processed_frames = 0
+    completed = False
     while cap.isOpened():
         with state_lock:
             if not detection_active or detection_source != "upload":
                 break
         ret, frame = cap.read()
         if not ret:
+            completed = True
             break
 
+        processed_frames += 1
         _update_current_frame(frame)
 
         result = detector.analyze_frame(frame)
         handle_detection_result(result, frame, "upload")
+        frame_time = processed_frames / fps if fps > 0 else 0.0
+        with state_lock:
+            upload_state["processed_frames"] = processed_frames
+            upload_state["current_seconds"] = frame_time
+            upload_state["violence_detected"] = (
+                bool(upload_state["violence_detected"]) or bool(result.get("violence_detected"))
+            )
         time.sleep(0.01)
 
     cap.release()
     with state_lock:
         detection_active = False
         detection_source = ""
+        upload_state["active"] = False
+        upload_state["completed"] = completed
+        if completed:
+            upload_state["processed_frames"] = total_frames or processed_frames
+            upload_state["current_seconds"] = duration_seconds or upload_state["current_seconds"]
     logger.info("Video processing completed.")
 
 
@@ -653,6 +797,8 @@ def upload_video():
         detection_source = "upload"
         latest_result = {}
         last_error = ""
+        _reset_upload_state_unlocked()
+        upload_state["active"] = True
 
     thread = threading.Thread(target=process_video, args=(filename,), daemon=True)
     thread.start()
@@ -669,6 +815,7 @@ def start_webcam():
         detection_source = "webcam"
         latest_result = {}
         last_error = ""
+        _reset_upload_state_unlocked()
     thread = threading.Thread(target=process_camera, args=("webcam",), daemon=True)
     thread.start()
     return jsonify({"message": "Webcam detection started."})
@@ -688,6 +835,7 @@ def start_rtsp():
         detection_source = "rtsp"
         latest_result = {}
         last_error = ""
+        _reset_upload_state_unlocked()
 
     thread = threading.Thread(target=process_camera, args=("rtsp",), daemon=True)
     thread.start()
@@ -704,6 +852,7 @@ def start_browser_webcam():
         detection_source = "browser_webcam"
         latest_result = {}
         last_error = ""
+        _reset_upload_state_unlocked()
     live_detector.reset()
     webcam_alert_gate.reset()
     _clear_current_frame()
@@ -729,7 +878,7 @@ def handle_browser_frame(data):
     except Exception:
         return
 
-    analysis_frame = _resize_frame_for_width(frame, 320)
+    analysis_frame = _resize_frame_for_width(frame, 640)
     display_frame = _resize_frame_for_width(frame, 640)
 
     result = live_detector.analyze_frame(analysis_frame)
@@ -748,6 +897,7 @@ def handle_browser_frame(data):
         "fusion_score": result["fusion_score"],
         "smoothed_score": result["smoothed_score"],
         "should_alert": result["should_alert"],
+        "face_crops": result.get("face_crops", []),
     })
 
 
@@ -758,6 +908,9 @@ def stop_detection():
         detection_active = False
         detection_source = ""
         last_error = ""
+        if upload_state.get("active"):
+            upload_state["active"] = False
+            upload_state["completed"] = False
     detector.reset()
     live_detector.reset()
     return jsonify({"message": "Detection stopped."})
@@ -771,6 +924,7 @@ def reset_system():
         detection_source = ""
         latest_result = {}
         last_error = ""
+        _reset_upload_state_unlocked()
     _reset_live_session_state()
     detector.reset()
     live_detector.reset()
@@ -784,10 +938,12 @@ def status():
         active = detection_active
         source = detection_source
         error = last_error
+        upload_progress = _get_upload_progress_unlocked()
     return jsonify({
         "detection_active": active,
         "detection_source": source,
         "last_error": error,
+        "upload_progress": upload_progress,
         "violence_detected": result.get("violence_detected", False),
         "confidence": result.get("confidence", 0),
         "cnn_score": result.get("cnn_score", 0),
@@ -862,6 +1018,7 @@ def api_stats():
     db_stats = db.get_stats()
     with state_lock:
         source = detection_source
+        upload_progress = _get_upload_progress_unlocked()
     if source in LIVE_SOURCE_TYPES:
         det_stats = live_detector.get_stats()
     else:
@@ -871,6 +1028,7 @@ def api_stats():
         **db_stats,
         **det_stats,
         **_get_live_stats(),
+        "upload_progress": upload_progress,
         "uptime_seconds": uptime,
         "model_loaded": model is not None,
     })
@@ -908,6 +1066,250 @@ def serve_capture(filename):
     return send_from_directory(CAPTURES_DIR, filename)
 
 
+# ==================== MULTI-CAMERA MANAGER ====================
+import uuid
+
+camera_registry = {}  # cam_id -> camera state dict
+camera_lock = threading.Lock()
+
+
+def _new_camera_state(cam_id, name, rtsp_url):
+    return {
+        "id": cam_id,
+        "name": name,
+        "rtsp_url": rtsp_url,
+        "active": False,
+        "detector": ViolenceDetector(model, build_live_detector_config()),
+        "alert_gate": build_rtsp_alert_gate(),
+        "stability_filter": RTSPStreamStabilityFilter(),
+        "current_frame": None,
+        "latest_result": {},
+        "thread": None,
+        "stop_event": threading.Event(),
+    }
+
+
+def _run_camera(cam_id):
+    """Capture + process loop for a single multi-camera RTSP feed."""
+    with camera_lock:
+        cam = camera_registry.get(cam_id)
+        if not cam:
+            return
+
+    stop_event = cam["stop_event"]
+    det = cam["detector"]
+    gate = cam["alert_gate"]
+    stability = cam["stability_filter"]
+    rtsp_url = cam["rtsp_url"]
+    cam_name = cam["name"]
+
+    analysis_width = max(160, int(config.get("camera.analysis_width", 640) or 640))
+    max_open_attempts = 3
+
+    while not stop_event.is_set():
+        cap = None
+        for attempt in range(1, max_open_attempts + 1):
+            if stop_event.is_set():
+                return
+            try:
+                cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+            except Exception:
+                cap = cv2.VideoCapture(rtsp_url)
+            if cap is not None and cap.isOpened():
+                det.reset_temporal_state()
+                stability.reset()
+                gate.reset()
+                logger.info("Camera '%s' RTSP stream opened.", cam_name)
+                break
+            if cap is not None:
+                cap.release()
+                cap = None
+            logger.error("Camera '%s' open failed (attempt %d/%d)", cam_name, attempt, max_open_attempts)
+            if attempt < max_open_attempts:
+                time.sleep(2)
+
+        if cap is None:
+            logger.error("Camera '%s' could not connect. Stopping.", cam_name)
+            with camera_lock:
+                cam["active"] = False
+            return
+
+        read_failures = 0
+        while not stop_event.is_set() and cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                read_failures += 1
+                if read_failures >= 3:
+                    logger.warning("Camera '%s' lost stream. Reconnecting...", cam_name)
+                    break
+                time.sleep(0.1)
+                continue
+            read_failures = 0
+
+            analysis_frame = _resize_frame_for_width(frame, analysis_width)
+            display_frame = _resize_frame_for_width(frame, analysis_width)
+
+            if not stability.allow_frame(analysis_frame):
+                det.reset_temporal_state()
+                with camera_lock:
+                    cam["current_frame"] = display_frame
+                    cam["latest_result"] = det._empty_result()
+                continue
+
+            result = det.analyze_frame(analysis_frame)
+            result = gate.filter_result(result, analysis_frame)
+
+            with camera_lock:
+                cam["current_frame"] = display_frame
+                cam["latest_result"] = result
+
+            if result.get("should_alert"):
+                handle_detection_result(result, display_frame, f"camera:{cam_name}")
+
+        cap.release()
+        if not stop_event.is_set():
+            time.sleep(2)
+
+    with camera_lock:
+        cam["active"] = False
+    logger.info("Camera '%s' stopped.", cam_name)
+
+
+@app.route("/cameras")
+def cameras_page():
+    return render_template("cameras.html", page="cameras")
+
+
+@app.route("/api/cameras", methods=["GET"])
+def api_list_cameras():
+    with camera_lock:
+        cams = []
+        for c in camera_registry.values():
+            r = c["latest_result"]
+            cams.append({
+                "id": c["id"],
+                "name": c["name"],
+                "rtsp_url": c["rtsp_url"],
+                "active": c["active"],
+                "violence_detected": r.get("violence_detected", False),
+                "confidence": r.get("confidence", 0),
+                "cnn_score": r.get("cnn_score", 0),
+                "optical_flow_score": r.get("optical_flow_score", 0),
+                "motion_energy_score": r.get("motion_energy_score", 0),
+            })
+    return jsonify({"cameras": cams})
+
+
+@app.route("/api/cameras", methods=["POST"])
+def api_add_camera():
+    data = request.get_json()
+    name = (data.get("name") or "").strip()
+    rtsp_url = (data.get("rtsp_url") or "").strip()
+    if not name or not rtsp_url:
+        return jsonify({"error": "Name and RTSP URL are required."}), 400
+
+    cam_id = str(uuid.uuid4())[:8]
+    with camera_lock:
+        camera_registry[cam_id] = _new_camera_state(cam_id, name, rtsp_url)
+    logger.info("Camera added: %s (%s)", name, cam_id)
+    return jsonify({"message": "Camera added.", "id": cam_id})
+
+
+@app.route("/api/cameras/<cam_id>", methods=["DELETE"])
+def api_remove_camera(cam_id):
+    with camera_lock:
+        cam = camera_registry.get(cam_id)
+        if not cam:
+            return jsonify({"error": "Camera not found."}), 404
+        cam["stop_event"].set()
+        del camera_registry[cam_id]
+    return jsonify({"message": "Camera removed."})
+
+
+@app.route("/api/cameras/<cam_id>/start", methods=["POST"])
+def api_start_camera(cam_id):
+    with camera_lock:
+        cam = camera_registry.get(cam_id)
+        if not cam:
+            return jsonify({"error": "Camera not found."}), 404
+        if cam["active"]:
+            return jsonify({"message": "Already running."})
+        cam["active"] = True
+        cam["stop_event"] = threading.Event()
+        cam["detector"] = ViolenceDetector(model, build_live_detector_config())
+        cam["alert_gate"] = build_rtsp_alert_gate()
+        cam["stability_filter"] = RTSPStreamStabilityFilter()
+        cam["latest_result"] = {}
+        t = threading.Thread(target=_run_camera, args=(cam_id,), daemon=True)
+        cam["thread"] = t
+        t.start()
+    return jsonify({"message": "Camera started."})
+
+
+@app.route("/api/cameras/<cam_id>/stop", methods=["POST"])
+def api_stop_camera(cam_id):
+    with camera_lock:
+        cam = camera_registry.get(cam_id)
+        if not cam:
+            return jsonify({"error": "Camera not found."}), 404
+        cam["stop_event"].set()
+        cam["active"] = False
+    return jsonify({"message": "Camera stopped."})
+
+
+@app.route("/api/cameras/start_all", methods=["POST"])
+def api_start_all_cameras():
+    with camera_lock:
+        ids = list(camera_registry.keys())
+    for cid in ids:
+        with camera_lock:
+            cam = camera_registry.get(cid)
+            if cam and not cam["active"]:
+                cam["active"] = True
+                cam["stop_event"] = threading.Event()
+                cam["detector"] = ViolenceDetector(model, build_live_detector_config())
+                cam["alert_gate"] = build_rtsp_alert_gate()
+                cam["stability_filter"] = RTSPStreamStabilityFilter()
+                cam["latest_result"] = {}
+                t = threading.Thread(target=_run_camera, args=(cid,), daemon=True)
+                cam["thread"] = t
+                t.start()
+    return jsonify({"message": "All cameras started."})
+
+
+@app.route("/api/cameras/stop_all", methods=["POST"])
+def api_stop_all_cameras():
+    with camera_lock:
+        for cam in camera_registry.values():
+            cam["stop_event"].set()
+            cam["active"] = False
+    return jsonify({"message": "All cameras stopped."})
+
+
+@app.route("/api/cameras/<cam_id>/feed")
+def api_camera_feed(cam_id):
+    def generate():
+        while True:
+            with camera_lock:
+                cam = camera_registry.get(cam_id)
+                if not cam or not cam["active"]:
+                    break
+                frame = cam["current_frame"]
+            if frame is None:
+                time.sleep(0.1)
+                continue
+            ret, buffer = cv2.imencode(".jpg", frame)
+            if ret:
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+                )
+            time.sleep(0.1)
+
+    return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
+# ==================== END MULTI-CAMERA ====================
+
+
 @app.route("/api/confidence_stream")
 def confidence_stream():
     def generate():
@@ -918,6 +1320,7 @@ def confidence_stream():
                     result = dict(latest_result) if latest_result else {}
                     source = detection_source
                     error = last_error
+                    upload_progress = _get_upload_progress_unlocked()
                 data = json.dumps({
                     "confidence": result.get("confidence", 0),
                     "cnn_score": result.get("cnn_score", 0),
@@ -926,8 +1329,10 @@ def confidence_stream():
                     "fusion_score": result.get("fusion_score", 0),
                     "violence_detected": result.get("violence_detected", False),
                     "should_alert": result.get("should_alert", False),
+                    "face_crops": result.get("face_crops", []),
                     "active": active,
                     "detection_source": source,
+                    "upload_progress": upload_progress,
                     "last_error": error,
                     "model_loaded": model is not None,
                 })
